@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import sys
 from pathlib import Path
@@ -10,7 +11,6 @@ from sentinel_orbit_downloader.core.config import DEFAULT_DB_PATH
 from sentinel_orbit_downloader.services.aoi import aoi_file_to_wkt, bbox_to_wkt
 from sentinel_orbit_downloader.services.asf_client import (
     SearchParams,
-    build_session,
     product_size_mb,
     query_scenes,
     scene_name_from_product,
@@ -19,7 +19,11 @@ from sentinel_orbit_downloader.services.asf_client import (
 from sentinel_orbit_downloader.services.orbit_client import (
     collect_orbit_scenes,
     download_orbits,
-    scene_names_from_results,
+)
+from sentinel_orbit_downloader.services.download_manager import (
+    DownloadJobRequest,
+    execute_download_job,
+    queue_download_job,
 )
 from sentinel_orbit_downloader.services.project_store import (
     create_project,
@@ -112,8 +116,8 @@ def build_parser() -> argparse.ArgumentParser:
     download_parser.add_argument(
         "--processes",
         type=positive_int,
-        default=2,
-        help="parallel ASF download processes",
+        default=3,
+        help="retry attempts for each product download",
     )
     download_parser.add_argument(
         "--skip-data",
@@ -418,6 +422,15 @@ def cmd_download(args: argparse.Namespace) -> int:
         results = perform_query(args, aoi_meta["aoi_wkt"])
         save_query_results(args.db, job.id, results)
         record_job_event(args.db, job.id, "info", f"Query returned {len(results)} scene(s)")
+        update_search_job(
+            args.db,
+            job.id,
+            status="running",
+            result_count=len(results),
+            data_dir=str(data_dir),
+            orbit_dir=str(orbit_dir),
+            manifest_path=str(manifest),
+        )
 
         print_results(results)
         write_manifest(results, manifest)
@@ -437,51 +450,31 @@ def cmd_download(args: argparse.Namespace) -> int:
             print(f"Saved job: {job.id}")
             return 0
 
-        if not args.skip_data:
-            data_dir.mkdir(parents=True, exist_ok=True)
-            session = build_session(
-                username=args.username,
-                password=args.password,
-                ask_password=args.ask_password,
-            )
-            print(f"Downloading {len(results)} product(s) to {data_dir} ...")
-            results.download(path=str(data_dir), session=session, processes=args.processes)
-            print("Product download finished.")
-            record_job_event(args.db, job.id, "info", f"Product download finished into {data_dir}")
-            record_product_downloads(args.db, job.id, results, data_dir)
-        else:
-            record_job_event(args.db, job.id, "info", "Product download skipped by request")
-            record_product_downloads(args.db, job.id, results, None)
+        password = args.password
+        if args.ask_password and not args.skip_data:
+            password = getpass.getpass("Earthdata password: ")
 
-        orbit_failures = 0
-        if not args.skip_orbits:
-            scenes = scene_names_from_results(results)
-            print(f"Downloading orbit files for {len(scenes)} scene(s) to {orbit_dir} ...")
-            orbit_results = download_orbits(scenes, orbit_dir)
-            orbit_failures = summarize_orbit_results(orbit_results)
-            record_orbit_downloads(args.db, job.id, orbit_results)
-            record_job_event(
-                args.db,
-                job.id,
-                "info",
-                f"Orbit download finished: {len(orbit_results) - orbit_failures} ok, {orbit_failures} failed",
-            )
-        else:
-            record_job_event(args.db, job.id, "info", "Orbit download skipped by request")
-
-        final_status = "partial_failed" if orbit_failures else "succeeded"
-        update_search_job(
-            args.db,
-            job.id,
-            status=final_status,
-            result_count=len(results),
-            data_dir=str(data_dir),
-            orbit_dir=str(orbit_dir),
-            manifest_path=str(manifest),
+        manager_request = DownloadJobRequest(
+            job_id=job.id,
+            data_dir=data_dir,
+            orbit_dir=orbit_dir,
+            manifest_path=manifest,
+            skip_data=args.skip_data,
+            skip_orbits=args.skip_orbits,
+            processes=args.processes,
+            ignore_orbit_errors=args.ignore_orbit_errors,
+            username=args.username,
+            password=password,
         )
+        queue_download_job(args.db, manager_request)
+        print(f"Downloading {len(results)} scene(s) with resume and validation support ...")
+        execute_download_job(args.db, manager_request)
 
+        finished_job = get_job(args.db, job.id)
+        final_status = finished_job.status if finished_job is not None else "failed"
+        print(f"Download job finished: {final_status}")
         print(f"Saved job: {job.id}")
-        if orbit_failures and not args.ignore_orbit_errors:
+        if final_status in {"failed", "partial_failed"}:
             return 1
         return 0
     except Exception as exc:

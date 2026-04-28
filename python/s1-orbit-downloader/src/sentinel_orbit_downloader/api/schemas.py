@@ -121,11 +121,21 @@ class JobDetailResponse(BaseModel):
     events: list[JobEventResponse] = Field(default_factory=list)
 
 
+class UploadedAoiResponse(BaseModel):
+    name: str
+    source_format: str
+    geometry_type: str
+    feature_count: int
+    bbox: list[float] = Field(default_factory=list)
+    wkt: str
+
+
 class SearchJobCreateRequest(BaseModel):
     project_id: int | None = None
     bbox: str | None = None
     wkt: str | None = None
     region_adcode: str | None = None
+    source_name: str | None = None
     start: str
     end: str
     processing_level: str = "SLC"
@@ -158,7 +168,7 @@ class DownloadJobCreateRequest(BaseModel):
     manifest_path: str | None = None
     skip_data: bool = False
     skip_orbits: bool = False
-    processes: int = Field(default=2, ge=1)
+    processes: int = Field(default=3, ge=1)
     ignore_orbit_errors: bool = False
     username: str | None = None
     password: str | None = None

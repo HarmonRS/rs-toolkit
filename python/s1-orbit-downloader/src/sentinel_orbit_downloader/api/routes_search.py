@@ -1,10 +1,16 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from sentinel_orbit_downloader.api.deps import get_db_path
-from sentinel_orbit_downloader.api.schemas import JobSceneResponse, JobSummary, SearchJobCreateRequest, SearchJobCreateResponse
-from sentinel_orbit_downloader.services.aoi import bbox_to_wkt
+from sentinel_orbit_downloader.api.schemas import (
+    JobSceneResponse,
+    JobSummary,
+    SearchJobCreateRequest,
+    SearchJobCreateResponse,
+    UploadedAoiResponse,
+)
+from sentinel_orbit_downloader.services.aoi import bbox_to_wkt, parse_uploaded_aoi
 from sentinel_orbit_downloader.services.asf_client import SearchParams, query_scenes
 from sentinel_orbit_downloader.services.project_store import (
     create_search_job,
@@ -19,6 +25,32 @@ from sentinel_orbit_downloader.services.region_catalog import get_region, region
 
 
 router = APIRouter(prefix="/search-jobs", tags=["search-jobs"])
+
+
+@router.post("/upload-aoi", response_model=UploadedAoiResponse)
+async def upload_search_aoi_endpoint(
+    files: list[UploadFile] = File(...),
+) -> UploadedAoiResponse:
+    uploads: list[tuple[str, bytes]] = []
+    for file in files:
+        if not file.filename:
+            continue
+        content = await file.read()
+        uploads.append((file.filename, content))
+
+    try:
+        parsed = parse_uploaded_aoi(uploads)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return UploadedAoiResponse(
+        name=parsed.name,
+        source_format=parsed.source_format,
+        geometry_type=parsed.geometry_type,
+        feature_count=parsed.feature_count,
+        bbox=parsed.bbox,
+        wkt=parsed.wkt,
+    )
 
 
 @router.post("", response_model=SearchJobCreateResponse)
@@ -102,8 +134,8 @@ def resolve_search_aoi(request: SearchJobCreateRequest, db_path) -> dict[str, st
     if request.wkt:
         return {
             "aoi_wkt": request.wkt.strip(),
-            "source_type": "wkt",
-            "source_value": request.wkt.strip(),
+            "source_type": "aoi_file" if request.source_name else "wkt",
+            "source_value": request.source_name.strip() if request.source_name else request.wkt.strip(),
             "region_adcode": None,
             "region_name": None,
         }

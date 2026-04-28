@@ -88,4 +88,7 @@ def download_orbits(scenes: Sequence[str], orbit_dir: Path) -> list[OrbitResult]
         except (InvalidSceneError, OrbitNotFoundError) as exc:
             message = str(exc) or exc.__class__.__name__
             results.append(OrbitResult(scene=scene, path=None, error=message))
+        except Exception as exc:
+            message = str(exc) or exc.__class__.__name__
+            results.append(OrbitResult(scene=scene, path=None, error=message))
     return results

@@ -71,6 +71,29 @@ function Get-RunningProcess {
     }
 }
 
+function Get-ListeningProcessId {
+    param([int]$Port)
+
+    try {
+        $connection = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop |
+            Select-Object -First 1
+        if ($connection) {
+            return [int]$connection.OwningProcess
+        }
+    } catch {
+    }
+
+    $lines = netstat -ano -p tcp | Select-String "LISTENING"
+    foreach ($line in $lines) {
+        $parts = ($line.Line.Trim() -split "\s+")
+        if ($parts.Count -ge 5 -and $parts[1].EndsWith(":$Port")) {
+            return [int]$parts[4]
+        }
+    }
+
+    return 0
+}
+
 function Load-State {
     param([string]$Path)
 
@@ -133,6 +156,29 @@ if ($state -and -not $ForceRestart) {
     }
 }
 
+if ($ForceRestart -and $state) {
+    $oldProcess = Get-RunningProcess -Id ([int]$state.pid)
+    if ($oldProcess) {
+        Write-Info "Stopping previous tracked process $($oldProcess.Id)"
+        Stop-Process -Id $oldProcess.Id -Force
+        Start-Sleep -Seconds 1
+    }
+    Remove-State -Path $statePath
+}
+
+if ($ForceRestart) {
+    foreach ($port in $PreferredPorts) {
+        if (Test-Health -Port $port) {
+            $listenerProcessId = Get-ListeningProcessId -Port $port
+            if ($listenerProcessId -gt 0) {
+                Write-Info "Stopping existing UI listener $listenerProcessId on port $port"
+                Stop-Process -Id $listenerProcessId -Force
+                Start-Sleep -Seconds 1
+            }
+        }
+    }
+}
+
 foreach ($port in $PreferredPorts) {
     if (Test-Health -Port $port) {
         $url = "http://127.0.0.1:$port/"
@@ -143,16 +189,6 @@ foreach ($port in $PreferredPorts) {
         }
         exit 0
     }
-}
-
-if ($ForceRestart -and $state) {
-    $oldProcess = Get-RunningProcess -Id ([int]$state.pid)
-    if ($oldProcess) {
-        Write-Info "Stopping previous tracked process $($oldProcess.Id)"
-        Stop-Process -Id $oldProcess.Id -Force
-        Start-Sleep -Seconds 1
-    }
-    Remove-State -Path $statePath
 }
 
 $uvPath = Get-UvPath
@@ -226,6 +262,12 @@ if (-not $started) {
 }
 
 Save-State -Path $statePath -ProcessId $process.Id -Port $portToUse -Url $url
+$listenerProcessId = Get-ListeningProcessId -Port $portToUse
+if ($listenerProcessId -gt 0) {
+    Save-State -Path $statePath -ProcessId $listenerProcessId -Port $portToUse -Url $url
+} else {
+    Save-State -Path $statePath -ProcessId $process.Id -Port $portToUse -Url $url
+}
 Write-Info "UI is ready: $url"
 
 if (-not $NoBrowser) {

@@ -95,6 +95,27 @@
             <h2>检索参数</h2>
             <button class="primary" id="runSearchBtn" type="button">发起检索</button>
           </div>
+          <div class="grid two">
+            <div class="field">
+              <label for="aoiMode">AOI 来源</label>
+              <select id="aoiMode">
+                <option value="region" selected>行政区</option>
+                <option value="upload">上传 AOI 文件</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="uploadAoiFiles">AOI 文件</label>
+              <input id="uploadAoiFiles" type="file" multiple accept=".geojson,.json,.zip,.shp,.shx,.dbf,.prj,.wkt,.txt">
+            </div>
+          </div>
+          <div class="toolbar">
+            <button class="ghost" id="uploadAoiBtn" type="button">解析上传 AOI</button>
+            <button class="ghost" id="clearAoiBtn" type="button">清除上传 AOI</button>
+          </div>
+          <div class="chip-row" id="uploadAoiSummary"></div>
+          <div class="note">
+            支持 `.geojson`、`.json`、`.wkt`、`.txt`、zip shapefile，或同时选择 `.shp`、`.shx`、`.dbf`、`.prj` 等文件。带 `.prj` 的 shapefile 会自动转为 WGS84，经纬度 GeoJSON 会自动合并成一个 AOI 范围。
+          </div>
           <div class="grid three">
             <div class="field">
               <label for="startDate">开始日期</label>
@@ -193,8 +214,8 @@
               </select>
             </label>
             <div class="field">
-              <label for="downloadProcesses">并发数</label>
-              <input id="downloadProcesses" type="number" min="1" value="2">
+              <label for="downloadProcesses">重试次数</label>
+              <input id="downloadProcesses" type="number" min="1" max="5" value="3">
             </div>
           </div>
           <div class="toggle-row">
@@ -219,7 +240,7 @@
           </div>
           <div class="chip-row" id="earthdataSummary"></div>
           <div class="note">
-            下载原始 Sentinel-1 产品必须提供 Earthdata 用户名和密码。你可以手填后直接下载，也可以先保存到本地配置。当前阶段只下载原始产品包和匹配的 EOF 轨道文件，暂不包含 GeoTIFF 处理。
+            下载原始 Sentinel-1 产品必须提供 Earthdata 用户名和密码。你可以手填后直接下载，也可以先保存到本地配置。产品下载支持完整文件跳过、.part 断点续传和下载后校验。当前阶段只下载原始产品包和匹配的 EOF 轨道文件，暂不包含 GeoTIFF 处理。
           </div>
         </section>
 

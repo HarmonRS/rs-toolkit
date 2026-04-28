@@ -73,6 +73,25 @@ const api = {
       body: JSON.stringify(payload),
     });
   },
+  async uploadSearchAoi(files) {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append("files", file);
+    }
+    const response = await fetch("/api/search-jobs/upload-aoi", {
+      method: "POST",
+      body: formData,
+    });
+    if (!response.ok) {
+      let detail = response.statusText;
+      try {
+        const payload = await response.json();
+        detail = payload.detail || JSON.stringify(payload);
+      } catch (_) {}
+      throw new Error(detail);
+    }
+    return response.json();
+  },
   createDownloadJob(payload) {
     return this.request("/api/download-jobs", {
       method: "POST",
@@ -98,6 +117,7 @@ const state = {
   regions: [],
   selectedRegion: null,
   selectedRegionDetail: null,
+  uploadedAoi: null,
   earthdataSettings: null,
   jobs: [],
   selectedJobId: null,
@@ -119,6 +139,9 @@ const el = {
   regionKeyword: document.getElementById("regionKeyword"),
   regionList: document.getElementById("regionList"),
   regionDetailCard: document.getElementById("regionDetailCard"),
+  aoiMode: document.getElementById("aoiMode"),
+  uploadAoiFiles: document.getElementById("uploadAoiFiles"),
+  uploadAoiSummary: document.getElementById("uploadAoiSummary"),
   startDate: document.getElementById("startDate"),
   endDate: document.getElementById("endDate"),
   maxResults: document.getElementById("maxResults"),
@@ -236,6 +259,10 @@ function currentProject() {
   return state.projects.find((project) => project.id === state.selectedProjectId) || null;
 }
 
+function currentAoiMode() {
+  return el.aoiMode.value || "region";
+}
+
 function autoFillProjectPaths(project) {
   if (!project || !project.data_root) {
     return;
@@ -350,6 +377,22 @@ function renderEarthdataSummary() {
   el.earthdataSummary.appendChild(
     makeChip(settings.has_password ? "Earthdata 密码：已保存" : "Earthdata 密码：未保存"),
   );
+}
+
+function renderUploadedAoiSummary() {
+  el.uploadAoiSummary.innerHTML = "";
+  const uploadedAoi = state.uploadedAoi;
+  if (!uploadedAoi) {
+    el.uploadAoiSummary.appendChild(makeChip("上传 AOI：未解析"));
+    return;
+  }
+  el.uploadAoiSummary.appendChild(makeChip(`AOI ${uploadedAoi.name}`));
+  el.uploadAoiSummary.appendChild(makeChip(`格式 ${uploadedAoi.source_format}`));
+  el.uploadAoiSummary.appendChild(makeChip(`几何 ${uploadedAoi.geometry_type}`));
+  el.uploadAoiSummary.appendChild(makeChip(`要素 ${uploadedAoi.feature_count}`));
+  if (Array.isArray(uploadedAoi.bbox) && uploadedAoi.bbox.length === 4) {
+    el.uploadAoiSummary.appendChild(makeChip(`范围 ${formatBBox(uploadedAoi.bbox)}`));
+  }
 }
 
 function renderJobFilterSummary() {
@@ -515,8 +558,16 @@ function updateSelectionSummary() {
   if (project) {
     el.selectionSummary.appendChild(makeChip(`项目 ${project.name}`));
   }
-  if (state.selectedRegion) {
-    el.selectionSummary.appendChild(makeChip(`行政区 ${state.selectedRegion.label}`));
+  if (currentAoiMode() === "upload") {
+    el.selectionSummary.appendChild(makeChip("AOI 来源 上传文件"));
+    if (state.uploadedAoi) {
+      el.selectionSummary.appendChild(makeChip(`上传 AOI ${state.uploadedAoi.name}`));
+    }
+  } else {
+    el.selectionSummary.appendChild(makeChip("AOI 来源 行政区"));
+    if (state.selectedRegion) {
+      el.selectionSummary.appendChild(makeChip(`行政区 ${state.selectedRegion.label}`));
+    }
   }
   el.selectionSummary.appendChild(makeChip(`时间 ${el.startDate.value} - ${el.endDate.value}`));
   el.selectionSummary.appendChild(makeChip(`产品 ${el.processingLevel.value}`));
@@ -614,6 +665,25 @@ async function loadSelectedJobDetail() {
   updateSelectionSummary();
 }
 
+async function uploadAoi() {
+  const files = Array.from(el.uploadAoiFiles.files || []);
+  if (!files.length) {
+    throw new Error("请先选择 AOI 文件");
+  }
+  state.uploadedAoi = await api.uploadSearchAoi(files);
+  renderUploadedAoiSummary();
+  updateSelectionSummary();
+  setMessage(`AOI 已解析：${state.uploadedAoi.name}`, "success");
+}
+
+function clearUploadedAoi() {
+  state.uploadedAoi = null;
+  el.uploadAoiFiles.value = "";
+  renderUploadedAoiSummary();
+  updateSelectionSummary();
+  setMessage("上传 AOI 已清空", "info");
+}
+
 async function importCatalog() {
   const payload = {
     source_path: el.catalogPath.value.trim() || DEFAULT_CATALOG_PATH,
@@ -669,13 +739,9 @@ async function createSearchJob() {
   if (!state.selectedProjectId) {
     throw new Error("请先选择项目");
   }
-  if (!state.selectedRegion) {
-    throw new Error("请先选择行政区");
-  }
 
   const payload = {
     project_id: state.selectedProjectId,
-    region_adcode: state.selectedRegion.adcode,
     start: el.startDate.value,
     end: el.endDate.value,
     processing_level: el.processingLevel.value,
@@ -685,8 +751,22 @@ async function createSearchJob() {
     relative_orbit: numberOrNull(el.relativeOrbit.value),
     max_results: Number(el.maxResults.value || 20),
     manifest_path: emptyToNull(el.manifestPath.value),
-    raw_region: el.rawRegion.checked,
   };
+
+  if (currentAoiMode() === "upload") {
+    if (!state.uploadedAoi) {
+      throw new Error("请先上传并解析 AOI 文件");
+    }
+    payload.wkt = state.uploadedAoi.wkt;
+    payload.source_name = state.uploadedAoi.name;
+    payload.raw_region = false;
+  } else {
+    if (!state.selectedRegion) {
+      throw new Error("请先选择行政区");
+    }
+    payload.region_adcode = state.selectedRegion.adcode;
+    payload.raw_region = el.rawRegion.checked;
+  }
 
   const response = await api.createSearchJob(payload);
   state.selectedJobId = response.job.id;
@@ -822,6 +902,11 @@ function bindEvents() {
   document.getElementById("createProjectBtn").addEventListener("click", runAction(createProject, "正在创建项目"));
   document.getElementById("refreshProjectsBtn").addEventListener("click", runAction(loadProjects, "正在刷新项目"));
   document.getElementById("searchRegionsBtn").addEventListener("click", runAction(loadRegions, "正在查询行政区"));
+  document.getElementById("uploadAoiBtn").addEventListener("click", runAction(uploadAoi, "正在解析上传 AOI"));
+  document.getElementById("clearAoiBtn").addEventListener("click", clearUploadedAoi);
+  document.getElementById("aoiMode").addEventListener("change", () => {
+    updateSelectionSummary();
+  });
   document.getElementById("clearRegionsBtn").addEventListener("click", () => {
     state.regions = [];
     state.selectedRegion = null;
@@ -848,6 +933,7 @@ async function bootstrap() {
   if (!el.catalogPath.value) {
     el.catalogPath.value = DEFAULT_CATALOG_PATH;
   }
+  renderUploadedAoiSummary();
   el.healthDetail.textContent = window.location.origin;
   setMessage("正在初始化工作台", "info");
   await loadHealth();
