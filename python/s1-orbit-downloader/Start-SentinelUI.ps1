@@ -94,6 +94,51 @@ function Get-ListeningProcessId {
     return 0
 }
 
+function Invoke-UiShutdown {
+    param(
+        [string]$Url,
+        [string]$ShutdownToken
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Url) -or [string]::IsNullOrWhiteSpace($ShutdownToken)) {
+        return $false
+    }
+
+    try {
+        $headers = @{
+            "X-S1DL-Shutdown-Token" = $ShutdownToken
+        }
+        $shutdownUrl = $Url.TrimEnd("/") + "/api/shutdown"
+        $null = Invoke-RestMethod -Uri $shutdownUrl -Method Post -Headers $headers -TimeoutSec 5 -ErrorAction Stop
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Wait-ForUiShutdown {
+    param(
+        [int]$ProcessId,
+        [int]$Port,
+        [int]$TimeoutSeconds = 10
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $running = Get-RunningProcess -Id $ProcessId
+        $listenerProcessId = 0
+        if ($Port -gt 0) {
+            $listenerProcessId = Get-ListeningProcessId -Port $Port
+        }
+        if (-not $running -and $listenerProcessId -le 0) {
+            return $true
+        }
+        Start-Sleep -Milliseconds 500
+    }
+
+    return $false
+}
+
 function Load-State {
     param([string]$Path)
 
@@ -113,14 +158,16 @@ function Save-State {
         [string]$Path,
         [int]$ProcessId,
         [int]$Port,
-        [string]$Url
+        [string]$Url,
+        [string]$ShutdownToken
     )
 
     $payload = [ordered]@{
-        pid        = $ProcessId
-        port       = $Port
-        url        = $Url
-        started_at = (Get-Date).ToString("s")
+        pid            = $ProcessId
+        port           = $Port
+        url            = $Url
+        shutdown_token = $ShutdownToken
+        started_at     = (Get-Date).ToString("s")
     }
 
     $payload | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding UTF8
@@ -157,11 +204,21 @@ if ($state -and -not $ForceRestart) {
 }
 
 if ($ForceRestart -and $state) {
-    $oldProcess = Get-RunningProcess -Id ([int]$state.pid)
-    if ($oldProcess) {
-        Write-Info "Stopping previous tracked process $($oldProcess.Id)"
-        Stop-Process -Id $oldProcess.Id -Force
-        Start-Sleep -Seconds 1
+    $existingStopped = $false
+    if ($state.url -and $state.shutdown_token) {
+        Write-Info "Requesting shutdown for previous tracked UI"
+        if (Invoke-UiShutdown -Url $state.url -ShutdownToken $state.shutdown_token) {
+            $existingStopped = Wait-ForUiShutdown -ProcessId ([int]$state.pid) -Port ([int]$state.port)
+        }
+    }
+
+    if (-not $existingStopped) {
+        $oldProcess = Get-RunningProcess -Id ([int]$state.pid)
+        if ($oldProcess) {
+            Write-Info "Stopping previous tracked process $($oldProcess.Id)"
+            Stop-Process -Id $oldProcess.Id -Force
+            Start-Sleep -Seconds 1
+        }
     }
     Remove-State -Path $statePath
 }
@@ -183,7 +240,7 @@ foreach ($port in $PreferredPorts) {
     if (Test-Health -Port $port) {
         $url = "http://127.0.0.1:$port/"
         Write-Info "Found an existing running UI at $url"
-        Save-State -Path $statePath -ProcessId 0 -Port $port -Url $url
+        Save-State -Path $statePath -ProcessId 0 -Port $port -Url $url -ShutdownToken ""
         if (-not $NoBrowser) {
             Start-Process $url | Out-Null
         }
@@ -206,6 +263,7 @@ if (-not (Test-Path -LiteralPath $pythonPath)) {
 
 $portToUse = Get-FreePort -Candidates $PreferredPorts
 $url = "http://127.0.0.1:$portToUse/"
+$shutdownToken = [guid]::NewGuid().ToString("N")
 
 if (Test-Path -LiteralPath $stdoutPath) {
     Remove-Item -LiteralPath $stdoutPath -Force
@@ -225,14 +283,19 @@ $arguments = @(
 )
 
 Write-Info "Starting UI at $url"
-$process = Start-Process `
-    -FilePath $pythonPath `
-    -ArgumentList $arguments `
-    -WorkingDirectory $projectRoot `
-    -WindowStyle Hidden `
-    -RedirectStandardOutput $stdoutPath `
-    -RedirectStandardError $stderrPath `
-    -PassThru
+try {
+    $env:S1DL_UI_SHUTDOWN_TOKEN = $shutdownToken
+    $process = Start-Process `
+        -FilePath $pythonPath `
+        -ArgumentList $arguments `
+        -WorkingDirectory $projectRoot `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $stdoutPath `
+        -RedirectStandardError $stderrPath `
+        -PassThru
+} finally {
+    Remove-Item Env:S1DL_UI_SHUTDOWN_TOKEN -ErrorAction SilentlyContinue
+}
 
 $started = $false
 for ($i = 0; $i -lt 30; $i++) {
@@ -261,12 +324,12 @@ if (-not $started) {
     throw "UI failed to start."
 }
 
-Save-State -Path $statePath -ProcessId $process.Id -Port $portToUse -Url $url
+Save-State -Path $statePath -ProcessId $process.Id -Port $portToUse -Url $url -ShutdownToken $shutdownToken
 $listenerProcessId = Get-ListeningProcessId -Port $portToUse
 if ($listenerProcessId -gt 0) {
-    Save-State -Path $statePath -ProcessId $listenerProcessId -Port $portToUse -Url $url
+    Save-State -Path $statePath -ProcessId $listenerProcessId -Port $portToUse -Url $url -ShutdownToken $shutdownToken
 } else {
-    Save-State -Path $statePath -ProcessId $process.Id -Port $portToUse -Url $url
+    Save-State -Path $statePath -ProcessId $process.Id -Port $portToUse -Url $url -ShutdownToken $shutdownToken
 }
 Write-Info "UI is ready: $url"
 

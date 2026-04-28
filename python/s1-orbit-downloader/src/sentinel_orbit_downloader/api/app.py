@@ -14,7 +14,11 @@ from sentinel_orbit_downloader.api.routes_projects import router as projects_rou
 from sentinel_orbit_downloader.api.routes_regions import router as regions_router
 from sentinel_orbit_downloader.api.routes_search import router as search_router
 from sentinel_orbit_downloader.api.routes_settings import router as settings_router
-from sentinel_orbit_downloader.core.config import configured_api_host, configured_api_port
+from sentinel_orbit_downloader.core.config import (
+    configured_api_host,
+    configured_api_port,
+    configured_ui_shutdown_token,
+)
 
 
 def create_app() -> FastAPI:
@@ -23,6 +27,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         description="Local API for Sentinel-1 search, orbit matching, and task management.",
     )
+    app.state.shutdown_token = configured_ui_shutdown_token()
 
     web_root = Path(__file__).resolve().parents[1] / "web"
     app.mount("/static", StaticFiles(directory=web_root), name="static")

@@ -25,3 +25,10 @@ def configured_api_port() -> int:
     if not raw:
         return DEFAULT_API_PORT
     return int(raw)
+
+
+def configured_ui_shutdown_token() -> str | None:
+    raw = os.getenv("S1DL_UI_SHUTDOWN_TOKEN")
+    if not raw:
+        return None
+    return raw
