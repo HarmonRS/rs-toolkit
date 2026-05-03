@@ -1,0 +1,8 @@
+<root>
+  <QualifyValue>
+    <HH>1.0</HH><HV>2.0</HV><VH>NULL</VH><VV>4.0</VV>
+  </QualifyValue>
+  <CalibrationConst>
+    <HH>10.0</HH><HV>20.0</HV><VH>30.0</VH><VV>40.0</VV>
+  </CalibrationConst>
+</root>

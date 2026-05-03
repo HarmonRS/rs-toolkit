@@ -1,0 +1,10 @@
+name: gf3-l1a2l2
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - gdal
+  - rasterio
+  - numpy
+  - tqdm
+  - pip
