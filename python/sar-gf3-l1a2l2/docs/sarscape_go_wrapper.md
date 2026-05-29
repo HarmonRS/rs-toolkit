@@ -56,6 +56,20 @@ Failed scenes:
 
 If any scene failed, the process exits with a non-zero status after the summary. This lets scheduled jobs detect that the batch needs attention while still preserving successful outputs from other scenes.
 
+## Resume Behavior
+
+Before extracting or processing a scene, the wrapper checks the scene output directory for completed geocoded SARscape products for every requested polarization. A product is considered complete when both the final `*_geo.sml` metadata file and its matching data file exist and are non-empty.
+
+Already completed scenes are skipped:
+
+```text
+SKIPPED GF3_...
+Input D:\GF3\L1A_BATCH\GF3_....tar.gz
+Output already complete E:\GF3\L2_SARscape\GF3_...
+```
+
+This is intended for interrupted or partially failed batch runs. For example, after replacing a truncated archive in the original input directory, rerun the same command with the same output directory; scenes that already have complete HH/HV geocoded outputs are skipped, and only missing or incomplete scenes are processed.
+
 ## Outputs
 
 Each scene is processed into its own output directory:

@@ -41,6 +41,8 @@ If `gf3wrapper.json` exists next to the executable, omitted `-input`, `-output`,
 
 In batch directory mode, a failed scene does not stop the whole run. Invalid or truncated archives, missing metadata, and SARscape failures are reported with the scene input path and reason, then the wrapper continues with the next scene. A final summary lists succeeded and failed scenes, and the process exits non-zero when any scene failed.
 
+Reruns with the same output directory skip scenes that already have complete `*_geo.sml` outputs and matching data files for the requested polarizations. This lets a repaired archive be placed back into the original input folder without reprocessing scenes that already finished.
+
 ## Notes
 
 - The server still needs ENVI, IDL Runtime, and SARscape installed and licensed.

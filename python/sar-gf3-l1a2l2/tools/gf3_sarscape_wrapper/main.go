@@ -52,6 +52,11 @@ func (e batchError) Error() string {
 	return fmt.Sprintf("batch completed with %d failed scene(s)", len(e.failures))
 }
 
+type completedProduct struct {
+	polarization string
+	path         string
+}
+
 func main() {
 	cfg := parseFlags()
 	if len(os.Args) == 1 {
@@ -252,11 +257,6 @@ func run(cfg config) error {
 		return err
 	}
 
-	savPath, err := materializeSAV(cfg.output)
-	if err != nil {
-		return err
-	}
-
 	scenes, err := discoverScenes(cfg)
 	if err != nil {
 		return err
@@ -266,9 +266,16 @@ func run(cfg config) error {
 	}
 
 	failures := make([]sceneFailure, 0)
-	succeeded := 0
+	processed := 0
+	skipped := 0
+	savPath := ""
 	for _, sc := range scenes {
 		sceneOut := filepath.Join(cfg.output, sc.name)
+		if products, ok := completedSceneOutputs(sceneOut, sc.name, cfg.polarizations); ok {
+			recordSceneSkip(sc, sceneOut, products)
+			skipped++
+			continue
+		}
 		if err := os.MkdirAll(sceneOut, 0o755); err != nil {
 			recordSceneFailure(&failures, sc, err)
 			continue
@@ -292,27 +299,39 @@ func run(cfg config) error {
 			sc.metaPath = extractedScenes[0].metaPath
 			sc.name = sceneName(sc.metaPath)
 		}
+		if savPath == "" {
+			var err error
+			savPath, err = materializeSAV(cfg.output)
+			if err != nil {
+				recordSceneFailure(&failures, sc, err)
+				continue
+			}
+		}
 		if err := runScene(cfg, savPath, sc, sceneOut); err != nil {
 			recordSceneFailure(&failures, sc, err)
 			continue
 		}
-		succeeded++
+		processed++
 	}
-	printBatchSummary(len(scenes), succeeded, failures)
+	printBatchSummary(len(scenes), processed, skipped, failures)
 	if len(failures) > 0 {
 		return batchError{failures: failures}
 	}
 	return nil
 }
 
-func recordSceneFailure(failures *[]sceneFailure, sc scene, err error) {
-	input := sc.metaPath
+func sceneInput(sc scene) string {
 	if sc.archivePath != "" {
-		input = sc.archivePath
+		return sc.archivePath
 	}
-	if input == "" {
-		input = sc.name
+	if sc.metaPath != "" {
+		return sc.metaPath
 	}
+	return sc.name
+}
+
+func recordSceneFailure(failures *[]sceneFailure, sc scene, err error) {
+	input := sceneInput(sc)
 
 	failure := sceneFailure{name: sc.name, input: input, err: err}
 	*failures = append(*failures, failure)
@@ -323,9 +342,21 @@ func recordSceneFailure(failures *[]sceneFailure, sc scene, err error) {
 	fmt.Println("Continuing with next scene.")
 }
 
-func printBatchSummary(total, succeeded int, failures []sceneFailure) {
+func recordSceneSkip(sc scene, sceneOut string, products []completedProduct) {
+	parts := make([]string, 0, len(products))
+	for _, product := range products {
+		parts = append(parts, product.polarization+"="+product.path)
+	}
+
+	fmt.Printf("SKIPPED %s\n", sc.name)
+	fmt.Printf("Input %s\n", sceneInput(sc))
+	fmt.Printf("Output already complete %s\n", sceneOut)
+	fmt.Printf("Products %s\n", strings.Join(parts, "; "))
+}
+
+func printBatchSummary(total, processed, skipped int, failures []sceneFailure) {
 	fmt.Println()
-	fmt.Printf("Batch summary: %d succeeded, %d failed, %d total\n", succeeded, len(failures), total)
+	fmt.Printf("Batch summary: %d processed, %d skipped, %d failed, %d total\n", processed, skipped, len(failures), total)
 	if len(failures) == 0 {
 		return
 	}
@@ -534,6 +565,55 @@ func progressStage(sceneOut, sceneNameValue, polarizations string) (string, int,
 		return check.label, done, len(checks)
 	}
 	return "finishing", done, len(checks)
+}
+
+func completedSceneOutputs(sceneOut, sceneNameValue, polarizations string) ([]completedProduct, bool) {
+	info, err := os.Stat(sceneOut)
+	if err != nil || !info.IsDir() {
+		return nil, false
+	}
+
+	pols := requestedPolarizations(polarizations)
+	products := make([]completedProduct, 0, len(pols))
+	for _, pol := range pols {
+		path, ok := completedGeoProduct(sceneOut, sceneNameValue, pol)
+		if !ok {
+			return nil, false
+		}
+		products = append(products, completedProduct{polarization: pol, path: path})
+	}
+	return products, true
+}
+
+func completedGeoProduct(sceneOut, sceneNameValue, polarization string) (string, bool) {
+	lower := strings.ToLower(polarization)
+	exact := filepath.Join(sceneOut, sceneNameValue+"_"+lower+"_geo.sml")
+	if completeGeoSML(exact) {
+		return exact, true
+	}
+
+	matches, err := filepath.Glob(filepath.Join(sceneOut, "*_"+lower+"_geo.sml"))
+	if err != nil {
+		return "", false
+	}
+	sort.Strings(matches)
+	for _, match := range matches {
+		if completeGeoSML(match) {
+			return match, true
+		}
+	}
+	return "", false
+}
+
+func completeGeoSML(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() || info.Size() == 0 {
+		return false
+	}
+
+	dataPath := strings.TrimSuffix(path, ".sml")
+	dataInfo, err := os.Stat(dataPath)
+	return err == nil && !dataInfo.IsDir() && dataInfo.Size() > 0
 }
 
 func requestedPolarizations(value string) []string {

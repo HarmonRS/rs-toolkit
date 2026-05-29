@@ -42,6 +42,8 @@ The wrapper writes one output subdirectory per scene. On successful runs it save
 
 Batch directory runs continue after per-scene failures. If one archive is truncated, invalid, missing metadata, or fails during SARscape processing, the wrapper prints the failed scene and reason, skips that scene, and continues with the remaining scenes. At the end it prints a batch summary and returns a non-zero exit code when any scene failed.
 
+Before processing each scene, the wrapper checks the scene output directory for completed geocoded products for the requested polarizations. Already completed scenes are skipped, so rerunning the same input/output pair only processes missing or incomplete scenes.
+
 More details: [docs/sarscape_go_wrapper.md](docs/sarscape_go_wrapper.md)
 
 ## Python Pipeline
