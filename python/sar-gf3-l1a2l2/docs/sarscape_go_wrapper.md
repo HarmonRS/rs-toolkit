@@ -40,6 +40,22 @@ The wrapper supports:
 
 Directory mode recursively scans for `*.tar.gz`, `*.tgz`, and `*.meta.xml`. If both archive and metadata exist for the same scene name, the archive is preferred. Internal `.gf3_extract` folders are skipped.
 
+## Batch Failure Handling
+
+Directory runs are fault-tolerant at the scene level. If a single scene cannot be extracted or processed, the wrapper records that scene as failed, prints the input path and error reason, and continues with the next scene.
+
+Archive read errors include the archive path, archive size when available, and the archive member being read when the failure happened. For example, a truncated `.tar.gz` reports that the archive appears incomplete and should be re-copied or re-downloaded.
+
+At the end of the run, the wrapper prints a summary:
+
+```text
+Batch summary: 3 succeeded, 1 failed, 4 total
+Failed scenes:
+- GF3_... (<archive path>): <failure reason>
+```
+
+If any scene failed, the process exits with a non-zero status after the summary. This lets scheduled jobs detect that the batch needs attention while still preserving successful outputs from other scenes.
+
 ## Outputs
 
 Each scene is processed into its own output directory:

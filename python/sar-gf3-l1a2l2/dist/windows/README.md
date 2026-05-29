@@ -14,4 +14,6 @@ Run from the repository root:
 
 The executable requires ENVI/IDL Runtime and SARscape on the target machine.
 
+In directory mode, failed scenes are skipped and listed in a final batch summary. The wrapper continues with remaining scenes, but exits non-zero if any scene failed.
+
 After successful runs, `gf3wrapper.json` is created in this directory to store defaults. That file is local runtime state and is ignored by Git.

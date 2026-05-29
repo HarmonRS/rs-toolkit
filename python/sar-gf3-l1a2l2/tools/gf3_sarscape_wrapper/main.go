@@ -38,6 +38,20 @@ type scene struct {
 	name        string
 }
 
+type sceneFailure struct {
+	name  string
+	input string
+	err   error
+}
+
+type batchError struct {
+	failures []sceneFailure
+}
+
+func (e batchError) Error() string {
+	return fmt.Sprintf("batch completed with %d failed scene(s)", len(e.failures))
+}
+
 func main() {
 	cfg := parseFlags()
 	if len(os.Args) == 1 {
@@ -251,32 +265,74 @@ func run(cfg config) error {
 		return fmt.Errorf("no *.meta.xml scenes found in %s", cfg.input)
 	}
 
+	failures := make([]sceneFailure, 0)
+	succeeded := 0
 	for _, sc := range scenes {
 		sceneOut := filepath.Join(cfg.output, sc.name)
 		if err := os.MkdirAll(sceneOut, 0o755); err != nil {
-			return err
+			recordSceneFailure(&failures, sc, err)
+			continue
 		}
 		if sc.archivePath != "" {
 			extractDir := filepath.Join(sceneOut, ".gf3_extract")
 			fmt.Printf("Extracting %s\n", sc.archivePath)
 			if err := extractTarGz(sc.archivePath, extractDir); err != nil {
-				return err
+				recordSceneFailure(&failures, sc, fmt.Errorf("failed to extract archive before processing scene %s: %w", sc.archivePath, err))
+				continue
 			}
 			extractedScenes, err := findMetaXML(extractDir)
 			if err != nil {
-				return err
+				recordSceneFailure(&failures, sc, err)
+				continue
 			}
 			if len(extractedScenes) == 0 {
-				return fmt.Errorf("no *.meta.xml found in archive: %s", sc.archivePath)
+				recordSceneFailure(&failures, sc, fmt.Errorf("no *.meta.xml found in archive: %s", sc.archivePath))
+				continue
 			}
 			sc.metaPath = extractedScenes[0].metaPath
 			sc.name = sceneName(sc.metaPath)
 		}
 		if err := runScene(cfg, savPath, sc, sceneOut); err != nil {
-			return err
+			recordSceneFailure(&failures, sc, err)
+			continue
 		}
+		succeeded++
+	}
+	printBatchSummary(len(scenes), succeeded, failures)
+	if len(failures) > 0 {
+		return batchError{failures: failures}
 	}
 	return nil
+}
+
+func recordSceneFailure(failures *[]sceneFailure, sc scene, err error) {
+	input := sc.metaPath
+	if sc.archivePath != "" {
+		input = sc.archivePath
+	}
+	if input == "" {
+		input = sc.name
+	}
+
+	failure := sceneFailure{name: sc.name, input: input, err: err}
+	*failures = append(*failures, failure)
+
+	fmt.Printf("FAILED %s\n", sc.name)
+	fmt.Printf("Input %s\n", input)
+	fmt.Printf("Reason: %v\n", err)
+	fmt.Println("Continuing with next scene.")
+}
+
+func printBatchSummary(total, succeeded int, failures []sceneFailure) {
+	fmt.Println()
+	fmt.Printf("Batch summary: %d succeeded, %d failed, %d total\n", succeeded, len(failures), total)
+	if len(failures) == 0 {
+		return
+	}
+	fmt.Println("Failed scenes:")
+	for _, failure := range failures {
+		fmt.Printf("- %s (%s): %v\n", failure.name, failure.input, failure.err)
+	}
 }
 
 func materializeSAV(outputDir string) (string, error) {
@@ -508,9 +564,31 @@ func matched(pattern string) bool {
 }
 
 func extractTarGz(src, dst string) error {
-	if err := os.MkdirAll(dst, 0o755); err != nil {
+	dst = filepath.Clean(dst)
+	tmpDst := dst + ".tmp"
+
+	if err := os.RemoveAll(tmpDst); err != nil {
+		return fmt.Errorf("remove stale temporary extraction directory %s: %w", tmpDst, err)
+	}
+	if err := os.MkdirAll(tmpDst, 0o755); err != nil {
 		return err
 	}
+	if err := extractTarGzToDir(src, tmpDst); err != nil {
+		_ = os.RemoveAll(tmpDst)
+		return err
+	}
+	if err := os.RemoveAll(dst); err != nil {
+		_ = os.RemoveAll(tmpDst)
+		return fmt.Errorf("replace extraction directory %s: %w", dst, err)
+	}
+	if err := os.Rename(tmpDst, dst); err != nil {
+		_ = os.RemoveAll(tmpDst)
+		return fmt.Errorf("move completed extraction into %s: %w", dst, err)
+	}
+	return nil
+}
+
+func extractTarGzToDir(src, dst string) error {
 	f, err := os.Open(src)
 	if err != nil {
 		return err
@@ -519,19 +597,21 @@ func extractTarGz(src, dst string) error {
 
 	gz, err := gzip.NewReader(f)
 	if err != nil {
-		return err
+		return archiveReadError(src, "", err)
 	}
 	defer gz.Close()
 
 	tr := tar.NewReader(gz)
+	var currentEntry string
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return err
+			return archiveReadError(src, currentEntry, err)
 		}
+		currentEntry = hdr.Name
 		target := filepath.Join(dst, filepath.Clean(hdr.Name))
 		if !strings.HasPrefix(target, filepath.Clean(dst)+string(os.PathSeparator)) && filepath.Clean(target) != filepath.Clean(dst) {
 			return fmt.Errorf("archive entry escapes destination: %s", hdr.Name)
@@ -552,7 +632,7 @@ func extractTarGz(src, dst string) error {
 			_, copyErr := io.Copy(out, tr)
 			closeErr := out.Close()
 			if copyErr != nil {
-				return copyErr
+				return archiveReadError(src, hdr.Name, copyErr)
 			}
 			if closeErr != nil {
 				return closeErr
@@ -560,6 +640,20 @@ func extractTarGz(src, dst string) error {
 		}
 	}
 	return nil
+}
+
+func archiveReadError(src, entry string, err error) error {
+	detail := src
+	if info, statErr := os.Stat(src); statErr == nil {
+		detail = fmt.Sprintf("%s (%d bytes)", src, info.Size())
+	}
+	if entry != "" {
+		detail = fmt.Sprintf("%s while reading %s", detail, entry)
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(strings.ToLower(err.Error()), "unexpected eof") {
+		return fmt.Errorf("archive appears truncated or incomplete: %s: %w; re-copy or re-download the .tar.gz", detail, err)
+	}
+	return fmt.Errorf("read archive %s: %w", detail, err)
 }
 
 func sceneName(metaPath string) string {

@@ -40,6 +40,8 @@ Supported input forms:
 
 The wrapper writes one output subdirectory per scene. On successful runs it saves defaults next to the executable in `gf3wrapper.json`, so double-click interactive mode can reuse the previous input/output/DEM/polarization settings.
 
+Batch directory runs continue after per-scene failures. If one archive is truncated, invalid, missing metadata, or fails during SARscape processing, the wrapper prints the failed scene and reason, skips that scene, and continues with the remaining scenes. At the end it prints a batch summary and returns a non-zero exit code when any scene failed.
+
 More details: [docs/sarscape_go_wrapper.md](docs/sarscape_go_wrapper.md)
 
 ## Python Pipeline

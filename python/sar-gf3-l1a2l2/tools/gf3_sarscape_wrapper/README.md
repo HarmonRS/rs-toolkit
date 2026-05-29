@@ -39,6 +39,8 @@ Batch directory:
 
 If `gf3wrapper.json` exists next to the executable, omitted `-input`, `-output`, `-dem`, and `-pol` values are loaded from that file.
 
+In batch directory mode, a failed scene does not stop the whole run. Invalid or truncated archives, missing metadata, and SARscape failures are reported with the scene input path and reason, then the wrapper continues with the next scene. A final summary lists succeeded and failed scenes, and the process exits non-zero when any scene failed.
+
 ## Notes
 
 - The server still needs ENVI, IDL Runtime, and SARscape installed and licensed.
