@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local data sources and runtime state
+全国行政区.geojson
+.s1dl/
+.local-data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+downloads/
+data/
+orbits/
+projects/

@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sentinel Orbit Downloader</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>Sentinel Orbit Downloader</h1>
+        <p>本地查询、下载与精密轨道管理</p>
+      </div>
+
+      <section class="panel stack">
+        <div class="section-head">
+          <h2>环境配置</h2>
+        </div>
+        <div class="status-block">
+          <span class="status-dot" id="healthDot"></span>
+          <div>
+            <div class="status-title" id="healthLabel">正在连接服务</div>
+            <div class="status-subtle mono" id="healthDetail">http://127.0.0.1:8011</div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="catalogPath">行政区 GeoJSON</label>
+          <input id="catalogPath" value="">
+        </div>
+        <div class="field inline-field">
+          <label for="simplifyTolerance">简化容差</label>
+          <input id="simplifyTolerance" type="number" min="0.0001" step="0.001" value="0.01">
+        </div>
+        <div class="toolbar">
+          <button class="primary" id="importCatalogBtn" type="button">导入行政区</button>
+        </div>
+      </section>
+
+      <section class="panel stack">
+        <div class="section-head">
+          <h2>项目</h2>
+          <button class="ghost" id="refreshProjectsBtn" type="button">刷新</button>
+        </div>
+        <div class="field">
+          <label for="projectName">项目名称</label>
+          <input id="projectName" value="牡丹江 Sentinel-1 数据">
+        </div>
+        <div class="field">
+          <label for="projectPath">数据根目录</label>
+          <input id="projectPath" value=".local-data\\mudanjiang">
+        </div>
+        <div class="field">
+          <label for="projectDesc">说明</label>
+          <textarea id="projectDesc">牡丹江 Sentinel-1 场景、精密轨道与任务记录。</textarea>
+        </div>
+        <div class="toolbar">
+          <button class="primary" id="createProjectBtn" type="button">新建项目</button>
+        </div>
+        <div id="projectList" class="list"></div>
+      </section>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div>
+          <h2>任务工作台</h2>
+          <p>按行政区和时间检索 Sentinel-1，并统一管理数据与精密轨道下载。</p>
+        </div>
+        <div class="message" id="messageBar">等待操作</div>
+      </header>
+
+      <section class="layout two-col">
+        <section class="panel stack">
+          <div class="section-head">
+            <h2>行政区选择</h2>
+            <div class="toolbar">
+              <button class="ghost" id="searchRegionsBtn" type="button">查询</button>
+              <button class="ghost" id="clearRegionsBtn" type="button">清空</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="regionKeyword">名称或 adcode</label>
+            <input id="regionKeyword" value="牡丹江">
+          </div>
+          <div id="regionList" class="list tall"></div>
+          <div class="detail-card" id="regionDetailCard">
+            <div class="empty">未选择行政区</div>
+          </div>
+        </section>
+
+        <section class="panel stack">
+          <div class="section-head">
+            <h2>检索参数</h2>
+            <button class="primary" id="runSearchBtn" type="button">发起检索</button>
+          </div>
+          <div class="grid two">
+            <div class="field">
+              <label for="aoiMode">AOI 来源</label>
+              <select id="aoiMode">
+                <option value="region" selected>行政区</option>
+                <option value="upload">上传 AOI 文件</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="uploadAoiFiles">AOI 文件</label>
+              <input id="uploadAoiFiles" type="file" multiple accept=".geojson,.json,.zip,.shp,.shx,.dbf,.prj,.wkt,.txt">
+            </div>
+          </div>
+          <div class="toolbar">
+            <button class="ghost" id="uploadAoiBtn" type="button">解析上传 AOI</button>
+            <button class="ghost" id="clearAoiBtn" type="button">清除上传 AOI</button>
+          </div>
+          <div class="chip-row" id="uploadAoiSummary"></div>
+          <div class="note">
+            支持 `.geojson`、`.json`、`.wkt`、`.txt`、zip shapefile，或同时选择 `.shp`、`.shx`、`.dbf`、`.prj` 等文件。带 `.prj` 的 shapefile 会自动转为 WGS84，经纬度 GeoJSON 会自动合并成一个 AOI 范围。
+          </div>
+          <div class="grid three">
+            <div class="field">
+              <label for="startDate">开始日期</label>
+              <input id="startDate" type="date" value="2024-01-01">
+            </div>
+            <div class="field">
+              <label for="endDate">结束日期</label>
+              <input id="endDate" type="date" value="2024-03-01">
+            </div>
+            <div class="field">
+              <label for="maxResults">最大结果数</label>
+              <input id="maxResults" type="number" min="1" value="20">
+            </div>
+          </div>
+          <div class="grid three">
+            <div class="field">
+              <label for="processingLevel">产品级别</label>
+              <select id="processingLevel">
+                <option value="SLC" selected>SLC</option>
+                <option value="GRD_HD">GRD_HD</option>
+                <option value="GRD_MD">GRD_MD</option>
+                <option value="GRD_MS">GRD_MS</option>
+                <option value="OCN">OCN</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="beamMode">波束模式</label>
+              <select id="beamMode">
+                <option value="IW" selected>IW</option>
+                <option value="EW">EW</option>
+                <option value="WV">WV</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="flightDirection">轨道方向</label>
+              <select id="flightDirection">
+                <option value="">不限</option>
+                <option value="ASCENDING">ASCENDING</option>
+                <option value="DESCENDING">DESCENDING</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid three">
+            <div class="field">
+              <label for="polarization">极化</label>
+              <input id="polarization" placeholder="VV+VH">
+            </div>
+            <div class="field">
+              <label for="relativeOrbit">相对轨道号</label>
+              <input id="relativeOrbit" type="number" min="1" placeholder="可留空">
+            </div>
+            <div class="field">
+              <label for="manifestPath">清单 CSV</label>
+              <input id="manifestPath" placeholder=".local-data\\mudanjiang\\manifest.csv">
+            </div>
+          </div>
+          <div class="toggle-row">
+            <label class="toggle">
+              <input id="rawRegion" type="checkbox">
+              <span>使用原始行政区边界</span>
+            </label>
+          </div>
+          <div class="chip-row" id="selectionSummary"></div>
+        </section>
+      </section>
+
+      <section class="layout two-col">
+        <section class="panel stack">
+          <div class="section-head">
+            <h2>下载参数</h2>
+            <button class="primary" id="queueDownloadBtn" type="button">启动下载</button>
+          </div>
+          <div class="grid two">
+            <div class="field">
+              <label for="dataDir">数据目录</label>
+              <input id="dataDir" value=".local-data\\mudanjiang\\data">
+            </div>
+            <div class="field">
+              <label for="orbitDir">轨道目录</label>
+              <input id="orbitDir" value=".local-data\\mudanjiang\\orbits">
+            </div>
+          </div>
+          <div class="grid three">
+            <label class="field">
+              <span>跳过产品</span>
+              <select id="skipData">
+                <option value="false" selected>否</option>
+                <option value="true">是</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>跳过轨道</span>
+              <select id="skipOrbits">
+                <option value="false" selected>否</option>
+                <option value="true">是</option>
+              </select>
+            </label>
+            <div class="field">
+              <label for="downloadProcesses">重试次数</label>
+              <input id="downloadProcesses" type="number" min="1" max="5" value="3">
+            </div>
+          </div>
+          <div class="toggle-row">
+            <label class="toggle">
+              <input id="ignoreOrbitErrors" type="checkbox">
+              <span>忽略轨道失败并允许任务成功结束</span>
+            </label>
+          </div>
+          <div class="grid two">
+            <div class="field">
+              <label for="earthdataUser">Earthdata 用户名</label>
+              <input id="earthdataUser" autocomplete="username" placeholder="可留空">
+            </div>
+            <div class="field">
+              <label for="earthdataPass">Earthdata 密码</label>
+              <input id="earthdataPass" type="password" autocomplete="current-password" placeholder="可留空">
+            </div>
+          </div>
+          <div class="toolbar">
+            <button class="ghost" id="saveEarthdataBtn" type="button">保存凭据</button>
+            <button class="ghost danger" id="clearEarthdataBtn" type="button">清除凭据</button>
+          </div>
+          <div class="chip-row" id="earthdataSummary"></div>
+          <div class="note">
+            下载原始 Sentinel-1 产品必须提供 Earthdata 用户名和密码。你可以手填后直接下载，也可以先保存到本地配置。产品下载支持完整文件跳过、.part 断点续传和下载后校验。当前阶段只下载原始产品包和匹配的 EOF 轨道文件，暂不包含 GeoTIFF 处理。
+          </div>
+        </section>
+
+        <section class="panel stack">
+          <div class="section-head">
+            <h2>任务</h2>
+            <div class="toolbar">
+              <button class="ghost" id="refreshJobsBtn" type="button">刷新任务</button>
+              <button class="ghost" id="refreshDetailBtn" type="button">刷新详情</button>
+              <button class="ghost danger" id="deleteJobBtn" type="button">删除选中</button>
+              <button class="ghost danger" id="clearJobsBtn" type="button">清空当前项目</button>
+            </div>
+          </div>
+          <div class="chip-row" id="jobFilterSummary"></div>
+          <div id="jobList" class="list tall"></div>
+        </section>
+      </section>
+
+      <section class="panel stack">
+        <div class="section-head">
+          <h2>任务详情</h2>
+        </div>
+        <div id="jobMeta" class="chip-row"></div>
+        <div class="detail-layout">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 32%;">Scene</th>
+                  <th style="width: 16%;">开始时间</th>
+                  <th style="width: 10%;">级别</th>
+                  <th style="width: 10%;">相对轨道</th>
+                  <th style="width: 12%;">产品</th>
+                  <th style="width: 12%;">轨道</th>
+                  <th style="width: 8%;">大小</th>
+                </tr>
+              </thead>
+              <tbody id="sceneTableBody"></tbody>
+            </table>
+          </div>
+          <div class="events" id="eventList"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
