@@ -1,0 +1,5 @@
+.f
+.compile 'C:\Users\Administrator\Desktop\GF3_Test\GF3_ENVI_IDL\gf3_sarscape_pipeline.pro'
+.compile 'C:\Users\Administrator\Desktop\GF3_Test\GF3_ENVI_IDL\gf3_sarscape_cli.pro'
+save, /routines, filename='C:\Users\Administrator\Desktop\GF3_Test\GF3_ENVI_IDL\gf3_sarscape_cli.sav'
+exit

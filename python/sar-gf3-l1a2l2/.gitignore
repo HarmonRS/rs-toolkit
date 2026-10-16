@@ -1,0 +1,27 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+/.tmp_tests/
+logs/
+GMTED2010.jp2
+
+# Local wrapper state
+gf3wrapper.json
+.gf3_extract/
+.gf3_runtime/
+
+# Production data and generated outputs
+/data/
+/outputs/
+*.tar.gz
+*.tgz
+*.zip
+*.tif
+*.tiff
+*.img
+*.dat
+*.sml
+*.hdr

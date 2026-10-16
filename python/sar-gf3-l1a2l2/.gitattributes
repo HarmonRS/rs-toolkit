@@ -1,0 +1,16 @@
+* text=auto
+
+.gitattributes text eol=lf
+.gitignore text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.go text eol=lf
+*.mod text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.idl text eol=lf
+*.pro text eol=lf
+*.cmd text eol=crlf
+
+*.exe binary
+*.sav binary

@@ -1,0 +1,16 @@
+errBias = -1;
+errRand = -1;
+lineOffset = 10;
+sampOffset = 20;
+latOffset = 30;
+longOffset = 40;
+heightOffset = 50;
+lineScale = 60;
+sampScale = 70;
+latScale = 80;
+longScale = 90;
+heightScale = 100;
+lineNumCoef = (1, 2, 3);
+lineDenCoef = (4, 5, 6);
+sampNumCoef = (7, 8, 9);
+sampDenCoef = (10, 11, 12);
