@@ -1,0 +1,30 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [sar-gf3-l1a2l2, s1-orbit-downloader]
+    defaults:
+      run:
+        working-directory: python/${{ matrix.tool }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 编译检查
+        run: python -m compileall -q src
+      - name: Ruff（仅报错类规则）
+        run: pip install ruff && ruff check --select E9,F63,F7,F82 src
+      - name: 安装
+        run: pip install .
+      - name: 测试
+        run: |
+          if [ -d tests ]; then pip install pytest && pytest -q; else echo "无测试"; fi
