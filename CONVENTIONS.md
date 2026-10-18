@@ -24,7 +24,7 @@ rs-toolkit/
 ## 3. 分支与提交
 - 默认分支 `main`，始终保持可用；功能在 `feat/xxx`、`fix/xxx` 分支上开发，通过 PR 合并。
 - 提交信息采用 Conventional Commits：`<type>(<scope>): <说明>`
-  - type：`feat` `fix` `refactor` `docs` `test` `chore` `ci` `perf`
+  - type：`feat` `fix` `refactor` `docs` `test` `chore` `perf`
   - scope：rs-toolkit 中写工具名，如 `fix(sar-gf3-l1a2l2): 跳过损坏的压缩包`
 - 一个提交只做一件事；不提交生成物、数据、密钥。
 - 发布打 tag：主项目 `vX.Y.Z`；toolkit 内工具 `<工具名>-vX.Y.Z`。
@@ -47,11 +47,6 @@ rs-toolkit/
 每个仓库/工具目录必须有 README，至少包含：
 1. 一句话说明做什么；2. 环境与依赖；3. 安装；4. 最小运行示例；5. 输入/输出说明；6. 已知限制。
 
-## 7. CI
-- 每个仓库在 `.gitea/workflows/` 下配置 CI，PR 和推送 main 时触发。
-- Python：ruff + 编译检查 + pytest（有测试时）；Rust：`cargo fmt --check`、`cargo clippy -D warnings`、`cargo test`；Go：`go vet`、`go test`。
-- `main` 开分支保护：CI 通过后才能合并。AI 生成的代码同样必须过 CI。
-
-## 8. 其他
+## 7. 其他
 - 文本统一 UTF-8、LF（Windows `.cmd/.bat` 除外）。
 - 大于 10MB 的二进制/数据不入库，放 release 或 NAS。
